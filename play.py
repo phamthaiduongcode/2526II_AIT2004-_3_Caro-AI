@@ -1,6 +1,37 @@
 from source.gomoku import Board
+from source.AI import CaroAI
 
 if __name__ == "__main__":
-    game = Board()
-    print("Chào mừng đến với Caro AI")
-    game.display()
+    size = 9 # Tối thiểu theo đề bài
+    board = Board(size)
+    ai = CaroAI(player_id=2, depth=2) # Máy là O (2)
+    
+    print("--- CHÀO MỪNG ĐẾN VỚI CARO AI (4 IN A ROW) ---")
+    board.display()
+
+    while True:
+        if board.current_player == 1:
+            print("\nLượt của bạn (X):")
+            try:
+                r, c = map(int, input("Nhập hàng và cột (vd: 4 4): ").split())
+                if not board.make_move(r, c):
+                    print("Nước đi không hợp lệ!")
+                    continue
+            except ValueError:
+                continue
+        else:
+            print("\nAI đang suy nghĩ...")
+            move, score, nodes, duration = ai.get_move(board, mode="alpha_beta")
+            if move:
+                board.make_move(move[0], move[1])
+                print(f"AI đánh vào: {move}")
+                print(f"Thống kê: {nodes} trạng thái, thời gian: {duration:.4f}s, Score: {score}")
+        
+        board.display()
+        winner = board.check_win()
+        if winner != 0:
+            if winner == -1:
+                print("Hòa!")
+            else:
+                print(f"Người chơi {winner} ('X' nếu là 1, 'O' nếu là 2) thắng!")
+            break

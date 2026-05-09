@@ -10,6 +10,48 @@ class Board:
         """Kiểm tra nước đi có nằm trong bàn cờ và ô đó có trống không."""
         return 0 <= row < self.size and 0 <= col < self.size and self.grid[row][col] == 0
 
+    def check_win(self):
+        """Kiểm tra xem có ai thắng chưa (4 quân liên tiếp)."""
+        directions = [(0, 1), (1, 0), (1, 1), (1, -1)]
+        for r in range(self.size):
+            for c in range(self.size):
+                player = self.grid[r][c]
+                if player == 0:
+                    continue
+                
+                for dr, dc in directions:
+                    count = 1
+                    for i in range(1, 4): # Đề bài yêu cầu 4 quân
+                        nr, nc = r + dr * i, c + dc * i
+                        if 0 <= nr < self.size and 0 <= nc < self.size and self.grid[nr][nc] == player:
+                            count += 1
+                        else:
+                            break
+                    if count == 4:
+                        return player
+        
+        if all(cell != 0 for row in self.grid for cell in row):
+            return -1 # Hòa
+        return 0 # Chưa kết thúc
+
+    def get_legal_moves(self):
+        """Lấy danh sách các nước đi khả thi. 
+        Tối ưu: Chỉ xét các ô trống trong bán kính 2 ô quanh các quân đã đánh."""
+        moves = []
+        if not self.history:
+            return [(self.size // 2, self.size // 2)]
+            
+        look_range = 2
+        occupied = set((r, c) for r, c, p in self.history)
+        candidates = set()
+        for r, c in occupied:
+            for dr in range(-look_range, look_range + 1):
+                for dc in range(-look_range, look_range + 1):
+                    nr, nc = r + dr, c + dc
+                    if 0 <= nr < self.size and 0 <= nc < self.size and self.grid[nr][nc] == 0:
+                        candidates.add((nr, nc))
+        return list(candidates)
+
     def make_move(self, row, col):
         """Thực hiện nước đi và chuyển lượt."""
         if self.is_valid_move(row, col):
