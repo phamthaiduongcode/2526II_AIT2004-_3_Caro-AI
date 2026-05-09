@@ -2,43 +2,55 @@ from source.gomoku import Board
 from source.AI import CaroAI
 from source.utils import GameLogger
 
-if __name__ == "__main__":
-    size = 9 # Tối thiểu theo đề bài
+def run_combined_game():
+    try:
+        from gui.interface import CaroGUI
+    except ImportError:
+        print("\n[!] Lỗi: Bạn chưa cài đặt thư viện 'pygame' để chạy chế độ GUI.")
+        print("[!] Hãy chạy lệnh: pip install pygame")
+        return
+
+    # Khởi tạo các thành phần
+    size = 9
     board = Board(size)
-    ai_depth = 2
-    ai_mode = "alpha_beta" # Hoặc "minimax" để so sánh
-    ai = CaroAI(player_id=2, depth=ai_depth) # Máy là O (2)
+    ai_depth = 3
+    ai_mode = "alpha_beta"
+    ai = CaroAI(player_id=2, depth=ai_depth)
     logger = GameLogger()
-    
-    print("--- CHÀO MỪNG ĐẾN VỚI CARO AI (4 IN A ROW) ---")
+
+    print(f"\n--- CARO AI: GUI MODE WITH TERMINAL LOGGING ---")
+    print(f"AI Depth: {ai_depth} | Algorithm: {ai_mode}")
     board.display()
 
-    while True:
-        if board.current_player == 1:
-            print("\nLượt của bạn (X):")
-            try:
-                r, c = map(int, input("Nhập hàng và cột (vd: 4 4): ").split())
-                if not board.make_move(r, c):
-                    print("Nước đi không hợp lệ!")
-                    continue
-            except ValueError:
-                continue
-        else:
-            print("\nAI đang suy nghĩ...")
-            move, score, nodes, duration = ai.get_move(board, mode=ai_mode)
-            if move:
-                board.make_move(move[0], move[1])
-                print(f"AI đánh vào: {move}")
-                print(f"Thống kê: {nodes} trạng thái, thời gian: {duration:.4f}s, Score: {score}")
-                
-                # Ghi log dữ liệu vào file CSV để phục vụ thực nghiệm
-                logger.log_result(ai_mode, ai_depth, nodes, duration, score, move)
-        
-        board.display()
-        winner = board.check_win()
-        if winner != 0:
-            if winner == -1:
-                print("Hòa!")
-            else:
-                print(f"Người chơi {winner} ('X' nếu là 1, 'O' nếu là 2) thắng!")
-            break
+    # Kỹ thuật Monkey Patching: Ghi đè phương thức để in ra terminal khi chơi trên GUI
+    original_make_move = board.make_move
+    def patched_make_move(r, c):
+        current_p = board.current_player
+        success = original_make_move(r, c)
+        if success:
+            symbol = 'X' if current_p == 1 else 'O'
+            print(f"\n[Move] Người chơi {current_p} ({symbol}) đánh vào: ({r}, {c})")
+            board.display()
+            winner = board.check_win()
+            if winner != 0:
+                if winner == -1: print(">>> KẾT THÚC: HÒA <<<")
+                else: print(f">>> KẾT THÚC: NGƯỜI CHƠI {winner} THẮNG <<<")
+        return success
+    
+    original_get_move = ai.get_move
+    def patched_get_move(board_state, mode=ai_mode):
+        move, score, nodes, duration = original_get_move(board_state, mode)
+        print(f"\n[AI Thinking] {nodes} nodes duyệt, thời gian: {duration:.4f}s")
+        print(f"[AI Choice] Đánh vào {move} với điểm đánh giá: {score}")
+        logger.log_result(mode, ai_depth, nodes, duration, score, move)
+        return move, score, nodes, duration
+
+    # Gán các hàm đã được "nâng cấp" vào đối tượng
+    board.make_move = patched_make_move
+    ai.get_move = patched_get_move
+
+    gui = CaroGUI(board, ai)
+    gui.run()
+
+if __name__ == "__main__":
+    run_combined_game()
