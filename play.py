@@ -1,10 +1,14 @@
 from source.gomoku import Board
 from source.AI import CaroAI
+from source.utils import GameLogger
 
 if __name__ == "__main__":
     size = 9 # Tối thiểu theo đề bài
     board = Board(size)
-    ai = CaroAI(player_id=2, depth=2) # Máy là O (2)
+    ai_depth = 2
+    ai_mode = "alpha_beta" # Hoặc "minimax" để so sánh
+    ai = CaroAI(player_id=2, depth=ai_depth) # Máy là O (2)
+    logger = GameLogger()
     
     print("--- CHÀO MỪNG ĐẾN VỚI CARO AI (4 IN A ROW) ---")
     board.display()
@@ -21,11 +25,14 @@ if __name__ == "__main__":
                 continue
         else:
             print("\nAI đang suy nghĩ...")
-            move, score, nodes, duration = ai.get_move(board, mode="alpha_beta")
+            move, score, nodes, duration = ai.get_move(board, mode=ai_mode)
             if move:
                 board.make_move(move[0], move[1])
                 print(f"AI đánh vào: {move}")
                 print(f"Thống kê: {nodes} trạng thái, thời gian: {duration:.4f}s, Score: {score}")
+                
+                # Ghi log dữ liệu vào file CSV để phục vụ thực nghiệm
+                logger.log_result(ai_mode, ai_depth, nodes, duration, score, move)
         
         board.display()
         winner = board.check_win()

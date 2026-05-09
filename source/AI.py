@@ -9,35 +9,44 @@ class CaroAI:
         self.nodes_visited = 0
 
     def evaluate_board(self, board):
-        """Hàm đánh giá Heuristic: tính điểm dựa trên các chuỗi 2, 3, 4."""
+        """
+        Hàm đánh giá Heuristic nâng cao.
+        Gán điểm số dựa trên các mẫu hình (patterns) của cửa sổ 4 ô.
+        """
         score = 0
-        # Đơn giản hóa: đếm các mẫu cho player và trừ đi mẫu của đối thủ
-        score += self.count_score(board, self.player_id)
-        score -= self.count_score(board, self.opponent_id) * 1.5 # Ưu tiên chặn đối thủ
+        # Trọng số điểm cho các tình huống:
+        # 4 quân: Thắng tuyệt đối.
+        # 3 quân + 1 ô trống: Cực kỳ nguy hiểm.
+        # 2 quân + 2 ô trống: Tiềm năng tạo thế công.
+        weights = {4: 100000, 3: 1000, 2: 100}
+
+        score += self.calculate_player_score(board, self.player_id, weights)
+        # Nhân hệ số 1.2 cho đối thủ để AI có xu hướng chơi phòng thủ/chặn nước đi nguy hiểm của người chơi
+        score -= self.calculate_player_score(board, self.opponent_id, weights) * 1.2
         return score
 
-    def count_score(self, board, p):
-        s = 0
-        # Các hướng: ngang, dọc, chéo xuôi, chéo ngược
+    def calculate_player_score(self, board, player, weights):
+        total_score = 0
         directions = [(0, 1), (1, 0), (1, 1), (1, -1)]
+        
         for r in range(board.size):
             for c in range(board.size):
                 for dr, dc in directions:
-                    line = []
-                    for i in range(4): # Xét cửa sổ 4 ô
+                    window = []
+                    for i in range(4):
                         nr, nc = r + dr * i, c + dc * i
                         if 0 <= nr < board.size and 0 <= nc < board.size:
-                            line.append(board.grid[nr][nc])
-                        else:
-                            break
-                    
-                    if len(line) == 4:
-                        count_p = line.count(p)
-                        count_empty = line.count(0)
-                        if count_p == 4: s += 100000
-                        elif count_p == 3 and count_empty == 1: s += 1000
-                        elif count_p == 2 and count_empty == 2: s += 100
-        return s
+                            window.append(board.grid[nr][nc])
+
+                    if len(window) == 4:
+                        p_count = window.count(player)
+                        empty_count = window.count(0)
+                        
+                        # Một cửa sổ 4 ô chỉ có giá trị nếu nó không bị quân đối thủ chặn đứng
+                        if p_count + empty_count == 4:
+                            if p_count >= 2:
+                                total_score += weights.get(p_count, 0)
+        return total_score
 
     def minimax(self, board, depth, is_maximizing):
         self.nodes_visited += 1
@@ -48,7 +57,10 @@ class CaroAI:
         if depth == 0: return self.evaluate_board(board), None
 
         moves = board.get_legal_moves()
-        best_move = random.choice(moves) if moves else None
+        # Move Ordering: Ưu tiên các nước đi gần trung tâm bàn cờ
+        moves.sort(key=lambda m: abs(m[0] - board.size//2) + abs(m[1] - board.size//2))
+        
+        best_move = moves[0] if moves else None
 
         if is_maximizing:
             best_score = -float('inf')
@@ -80,6 +92,9 @@ class CaroAI:
         if depth == 0: return self.evaluate_board(board), None
 
         moves = board.get_legal_moves()
+        # Move Ordering: Giúp Alpha-Beta cắt nhánh sớm hơn rất nhiều
+        moves.sort(key=lambda m: abs(m[0] - board.size//2) + abs(m[1] - board.size//2))
+        
         best_move = moves[0] if moves else None
 
         if is_maximizing:
