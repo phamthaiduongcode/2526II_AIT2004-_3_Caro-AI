@@ -1,5 +1,7 @@
 import pygame
 import sys
+import threading
+import copy
 from source.gomoku import Board
 from source.AI import CaroAI
 
@@ -15,14 +17,16 @@ RED = (200, 0, 0)
 BLUE = (0, 0, 200)
 
 class CaroGUI:
-    def __init__(self, board, ai):
+    def __init__(self, board, ai, logger=None):
         pygame.init()
         self.screen = pygame.display.set_mode((WINDOW_SIZE, WINDOW_SIZE + 50))
         pygame.display.set_caption("UET Caro AI - 4 in a row")
         self.font = pygame.font.SysFont('Arial', 20)
         self.board = board
         self.ai = ai
+        self.logger = logger
         self.game_over = False
+        self.ai_thinking = False
 
     def draw_board(self):
         self.screen.fill(WHITE)
@@ -46,6 +50,19 @@ class CaroGUI:
                 elif self.board.grid[r][c] == 2: # Máy (O)
                     pygame.draw.circle(self.screen, BLUE, center, 22, 3)
 
+    def ai_move_wrapper(self):
+        """Hàm bọc để chạy AI trong Thread riêng."""
+        board_copy = copy.deepcopy(self.board)
+        move, score, nodes, duration = self.ai.get_move(board_copy, mode="alpha_beta")
+        
+        if not self.game_over:
+            print(f"\n[AI Thinking] {nodes} nodes duyệt, thời gian: {duration:.4f}s")
+            print(f"[AI Choice] AI chọn {move} với Score: {score}")
+            if self.logger:
+                self.logger.log_result("alpha_beta", self.ai.depth, nodes, duration, score, move)
+            pygame.event.post(pygame.event.Event(pygame.USEREVENT, {"move": move, "score": score}))
+        self.ai_thinking = False
+
     def run(self):
         while True:
             self.draw_board()
@@ -63,15 +80,20 @@ class CaroGUI:
                         winner = self.board.check_win()
                         if winner != 0: self.game_over = True
 
+                if event.type == pygame.USEREVENT:
+                    if event.move is None:
+                        # Nếu AI không có nước đi, kiểm tra thắng thua để kết thúc game
+                        if self.board.check_win() != 0:
+                            self.game_over = True
+                    else:
+                        r, c = event.move
+                        if self.board.make_move(r, c):
+                            if self.board.check_win() != 0: self.game_over = True
+
             # Lượt của AI
-            if not self.game_over and self.board.current_player == 2:
-                self.draw_board()
-                pygame.display.flip()
-                move, _, _, _ = self.ai.get_move(self.board, mode="alpha_beta")
-                if move:
-                    self.board.make_move(move[0], move[1])
-                    winner = self.board.check_win()
-                    if winner != 0: self.game_over = True
+            if not self.game_over and self.board.current_player == 2 and not self.ai_thinking:
+                self.ai_thinking = True
+                threading.Thread(target=self.ai_move_wrapper, daemon=True).start()
 
             if self.game_over:
                 msg = "Game Over!"

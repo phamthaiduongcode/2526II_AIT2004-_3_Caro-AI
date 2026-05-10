@@ -1,19 +1,18 @@
 import time
-import math
 
 class CaroAI:
-    def __init__(self, player_id, depth=4, weights=None, defense_multiplier=2.0):
+    def __init__(self, player_id, depth=3, weights=None, defense_multiplier=2.0):
         self.player_id = player_id
         self.opponent_id = 3 - player_id
         self.depth = depth
         self.nodes_visited = 0
         # Nếu không truyền weights, sử dụng bộ trọng số mặc định
-        self.weights = weights if weights else {3: 10000, 2: 500}
+        self.weights = weights if weights else {3: 10000, 2: 500, 1: 50}
         self.defense_multiplier = defense_multiplier
         self.transposition_table = {}  # {hash: (depth, flag, value, best_move)}
         self.killer_moves = [[None] * 2 for _ in range(20)]  # Lưu 2 nước killer mỗi độ sâu
         self.start_time = 0
-        self.time_limit = 2.0  # Mặc định mỗi nước đi có tối đa 2 giây
+        self.time_limit = 2.0
 
     def evaluate_board(self, board):
         """
@@ -37,27 +36,24 @@ class CaroAI:
         for r in range(board.size):
             for c in range(board.size):
                 for dr, dc in directions:
-                    p_count = 0
-                    empty_count = 0
-                    possible = True
-                    
-                    # Kiểm tra nhanh 4 ô liên tiếp
+                    p_count, e_count, opp_count = 0, 0, 0
                     for i in range(4):
                         nr, nc = r + dr * i, c + dc * i
-                        if not (0 <= nr < board.size and 0 <= nc < board.size):
-                            possible = False
-                            break
-                        val = board.grid[nr][nc]
-                        if val == player:
-                            p_count += 1
-                        elif val == 0:
-                            empty_count += 1
-                        else: # Gặp quân đối thủ
-                            possible = False
+                        if 0 <= nr < board.size and 0 <= nc < board.size:
+                            v = board.grid[nr][nc]
+                            if v == player: p_count += 1
+                            elif v == 0: e_count += 1
+                            else: 
+                                opp_count = 1
+                                break
+                        else:
+                            opp_count = 1
                             break
 
-                    if possible and p_count >= 2:
-                        total_score += weights.get(p_count, 0)
+                    # Nếu cửa sổ không bị đối thủ chặn và có quân của mình
+                    if opp_count == 0 and p_count > 0:
+                        # Ưu tiên lấy điểm từ bộ trọng số truyền vào
+                        total_score += weights.get(p_count, p_count * 10)
         return total_score
 
     def score_move_quick(self, board, r, c):
@@ -111,28 +107,30 @@ class CaroAI:
 
     def alpha_beta(self, board, depth, alpha, beta, is_maximizing):
         self.nodes_visited += 1
-        
-        # Kiểm tra thời gian định kỳ (cứ mỗi 1000 node)
+
+        # Kiểm tra thời gian định kỳ để dừng tìm kiếm
         if self.nodes_visited % 1000 == 0:
             if time.time() - self.start_time > self.time_limit:
-                return None, None # Trả về None để báo hiệu hết thời gian
+                return None, None
 
         board_hash = board.get_hash()
         alpha_orig = alpha
         beta_orig = beta
+        tt_move = None
 
         # 1. Tra cứu bảng Transposition (Bộ nhớ đệm trạng thái)
         if board_hash in self.transposition_table:
             tt_depth, tt_flag, tt_val, tt_move = self.transposition_table[board_hash]
             if tt_depth >= depth:
                 if tt_flag == "EXACT": return tt_val, tt_move
-                elif tt_flag == "LOWER": alpha = max(alpha, tt_val)
+                if tt_flag == "LOWER": alpha = max(alpha, tt_val)
                 elif tt_flag == "UPPER": beta = min(beta, tt_val)
                 if alpha >= beta: return tt_val, tt_move
 
         result = board.check_win()
-        if result == self.player_id: return 1000000, None
-        if result == self.opponent_id: return -1000000, None
+        # Thêm +depth để AI ưu tiên thắng nhanh nhất và thua chậm nhất
+        if result == self.player_id: return 1000000 + depth, None
+        if result == self.opponent_id: return -1000000 - depth, None
         if result == -1: return 0, None
         if depth == 0: return self.evaluate_board(board), None
 
@@ -140,6 +138,7 @@ class CaroAI:
         # 2. Cải tiến Move Ordering với Killer Heuristic
         killers = self.killer_moves[depth]
         moves.sort(key=lambda m: (
+            m == tt_move, # Ưu tiên nước đi tốt nhất từ bảng băm (ngay cả khi depth thấp)
             m in killers, # Ưu tiên các nước đi "sát thủ" đã tìm thấy trước đó
             self.score_move_quick(board, m[0], m[1]), 
             -abs(m[0] - board.size // 2) - abs(m[1] - board.size // 2)
@@ -153,8 +152,9 @@ class CaroAI:
                 board.make_move(r, c)
                 score, _ = self.alpha_beta(board, depth - 1, alpha, beta, False)
                 board.undo_move()
-                
-                if score is None: return None, None # Thoát nhanh do hết thời gian
+
+                if score is None: 
+                    return None, None # Thoát do hết thời gian
 
                 if score > best_score:
                     best_score = score
@@ -172,8 +172,9 @@ class CaroAI:
                 board.make_move(r, c)
                 score, _ = self.alpha_beta(board, depth - 1, alpha, beta, True)
                 board.undo_move()
-                
-                if score is None: return None, None # Thoát nhanh do hết thời gian
+
+                if score is None: 
+                    return None, None # Thoát do hết thời gian
 
                 if score < best_score:
                     best_score = score
@@ -201,28 +202,26 @@ class CaroAI:
         self.nodes_visited = 0
         self.start_time = time.time()
         self.time_limit = time_limit
-        
+
+        if mode == "minimax":
+            score, move = self.minimax(board, self.depth, True)
+            return move, score, self.nodes_visited, time.time() - self.start_time
+
         final_best_move = None
         final_best_score = 0
-        
-        # Iterative Deepening Loop
-        # Thay vì chỉ chạy 1 lần độ sâu self.depth, ta chạy từ 1 đến depth
+
+        # Iterative Deepening: Tìm kiếm sâu dần để tận dụng thời gian và Move Ordering
         for current_depth in range(1, self.depth + 1):
-            if mode == "minimax":
-                score, move = self.minimax(board, current_depth, True)
-            else:
-                score, move = self.alpha_beta(board, current_depth, -float('inf'), float('inf'), True)
+            score, move = self.alpha_beta(board, current_depth, -float('inf'), float('inf'), True)
             
-            # Nếu bị ngắt do hết thời gian, lấy kết quả của độ sâu hoàn thiện gần nhất
-            if score is None:
+            if score is None: # Hết thời gian, dừng ở độ sâu trước đó
                 break
-            
+                
             final_best_move = move
             final_best_score = score
             
-            # Nếu đã tìm thấy nước thắng, không cần đào sâu thêm
+            # Nếu đã tìm thấy nước thắng tuyệt đối, dừng ngay
             if abs(final_best_score) >= 900000:
                 break
 
-        end_time = time.time()
-        return final_best_move, final_best_score, self.nodes_visited, end_time - self.start_time
+        return final_best_move, final_best_score, self.nodes_visited, time.time() - self.start_time

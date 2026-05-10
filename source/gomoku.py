@@ -1,7 +1,7 @@
 import random
 
 class Board:
-    def __init__(self, size=15):
+    def __init__(self, size=9):
         self.size = size
         # Khởi tạo bàn cờ với toàn bộ giá trị là 0 (ô trống)
         self.grid = [[0 for _ in range(size)] for _ in range(size)]
@@ -13,9 +13,24 @@ class Board:
         self.zobrist_table = [[[random.getrandbits(64) for _ in range(3)] 
                                for _ in range(size)] for _ in range(size)]
         self.current_hash = random.getrandbits(64)
+        # Giá trị XOR để phân biệt lượt đi (Side to move)
+        self.zobrist_side = random.getrandbits(64)
+        # Cờ đánh dấu AI đang tính toán, tránh log tràn lan terminal
+        self.is_searching = False
 
     def get_hash(self):
         return self.current_hash
+
+    def recalculate_hash(self):
+        """Tính toán lại mã Hash từ đầu (Dùng sau khi can thiệp grid thủ công)."""
+        self.current_hash = random.getrandbits(64)
+        for r in range(self.size):
+            for c in range(self.size):
+                if self.grid[r][c] != 0:
+                    self.current_hash ^= self.zobrist_table[r][c][self.grid[r][c]]
+        # Nếu đang là lượt của người chơi 2, XOR thêm side bit
+        if self.current_player == 2:
+            self.current_hash ^= self.zobrist_side
 
     def is_valid_move(self, row, col):
         """Kiểm tra nước đi có nằm trong bàn cờ và ô đó có trống không."""
@@ -65,6 +80,8 @@ class Board:
             self.grid[row][col] = self.current_player
             self.current_hash ^= self.zobrist_table[row][col][self.current_player]
             
+            self.current_hash ^= self.zobrist_side # XOR lượt đi
+            
             self.history.append((row, col, self.current_player))
             
             # Chuyển lượt: nếu là 1 thì thành 2, nếu là 2 thì thành 1
@@ -82,6 +99,8 @@ class Board:
         self.current_hash ^= self.zobrist_table[row][col][self.grid[row][col]]
         self.grid[row][col] = 0
         self.current_hash ^= self.zobrist_table[row][col][0]
+        
+        self.current_hash ^= self.zobrist_side # XOR lượt đi
         
         self.current_player = player # Quay lại lượt của người vừa đánh
 

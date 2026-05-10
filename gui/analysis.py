@@ -8,6 +8,7 @@ def plot_results(csv_path="logs/benchmark_results.csv"):
         return
 
     df = pd.read_csv(csv_path)
+    os.makedirs('experiments', exist_ok=True)
     
     # Tách dữ liệu theo thuật toán
     # Lưu ý: CSV của chúng ta ghi Algorithm theo dạng "Minimax_StateName"

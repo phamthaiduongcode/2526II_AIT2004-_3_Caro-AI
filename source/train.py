@@ -10,71 +10,84 @@ from source.gomoku import Board
 from source.AI import CaroAI
 from source.utils import TrainingLogger
 
+def mutate_params(best_weights, best_def):
+    """Tạo ra biến dị từ bộ thông số tốt nhất hiện tại."""
+    challenger_weights = {
+        3: max(5000, best_weights[3] + random.randint(-800, 800)),
+        2: max(200, best_weights[2] + random.randint(-100, 100)),
+        1: max(10, best_weights.get(1, 50) + random.randint(-10, 10))
+    }
+    challenger_def = round(max(1.2, best_def + random.uniform(-0.2, 0.2)), 2)
+    return challenger_weights, challenger_def
+
 def play_match(ai1_weights, ai1_def, ai2_weights, ai2_def, rounds=3):
     """
-    Sử dụng Double Round Robin: Với mỗi thế trận ngẫu nhiên, cho 2 AI đấu 2 ván đảo quân.
-    Điều này giúp loại bỏ hoàn toàn lợi thế đi trước.
+    Thi đấu đối kháng để đánh giá chất lượng bộ trọng số.
+    Sử dụng Double Round Robin: Mỗi thế trận ngẫu nhiên chơi 2 ván đảo quân để triệt tiêu lợi thế đi trước.
     """
     score1, score2 = 0, 0
     size = 9
     for _ in range(rounds):
-        # Tạo một thế trận khởi đầu ngẫu nhiên
-        r_start, c_start = random.randint(2, size-3), random.randint(2, size-3)
+        # 1. Tạo thế trận khởi đầu 3 nước ngẫu nhiên để phá vỡ tính lặp lại (Asymmetric Starts)
+        start_moves = []
+        temp_board = Board(size)
+        for _ in range(3):
+            r, c = random.randint(2, size-3), random.randint(2, size-3)
+            if temp_board.make_move(r, c):
+                start_moves.append((r, c))
         
-        # Chơi 2 ván với cùng thế trận này
+        # 2. Thi đấu đảo ngược quân cờ (Double Round Robin)
         for swap in [False, True]:
             board = Board(size)
-            board.make_move(r_start, c_start)
-            
-            # Xác định ai là Player 1 (người đi nước tiếp theo sau nước ngẫu nhiên)
-            # Ván 1: AI1 là P1, AI2 là P2. Ván 2: Đảo ngược.
+            for r, c in start_moves: board.make_move(r, c)
+            board.recalculate_hash() # Đảm bảo Hash Zobrist đồng bộ với thế trận khởi đầu
+
             p1_is_challenger = not swap
+            # Gán ID dựa trên lượt đi hiện tại của bàn cờ
+            cid = board.current_player if p1_is_challenger else 3 - board.current_player
+            bid = 3 - cid
             
-            agent_challenger = CaroAI(player_id=1 if p1_is_challenger else 2, depth=4, weights=ai1_weights, defense_multiplier=ai1_def)
-            agent_best = CaroAI(player_id=2 if p1_is_challenger else 1, depth=4, weights=ai2_weights, defense_multiplier=ai2_def)
-            
-            # Giảm time_limit để huấn luyện nhanh hơn (0.5s vẫn đủ cho depth 3-4 với Alpha-Beta)
+            agent_c = CaroAI(player_id=cid, depth=3, weights=ai1_weights, defense_multiplier=ai1_def)
+            agent_b = CaroAI(player_id=bid, depth=3, weights=ai2_weights, defense_multiplier=ai2_def)
+
             while board.check_win() == 0:
-                curr_agent = agent_challenger if board.current_player == agent_challenger.player_id else agent_best
-                move, _, _, _ = curr_agent.get_move(board, mode="alpha_beta", time_limit=0.5)
+                curr = agent_c if board.current_player == cid else agent_b
+                # Sử dụng Time Limit ngắn (0.2s) để tăng tốc độ huấn luyện
+                move, _, _, _ = curr.get_move(board, mode="alpha_beta", time_limit=0.2)
                 if move:
                     board.make_move(move[0], move[1])
-                else: break
+                else:
+                    break # Trường hợp bàn cờ đầy hoặc không tìm được nước
             
             winner = board.check_win()
-            if winner == agent_challenger.player_id:
-                score1 += 2
-            elif winner == agent_best.player_id:
-                score2 += 2
-            else:
+            if winner == cid:
+                score1 += 2 # Challenger thắng
+            elif winner == bid:
+                score2 += 2 # Best thắng
+            elif winner == -1:
                 score1 += 1
                 score2 += 1
             
     return score1 > score2
 
 def evolve():
-    # Khởi đầu
-    best_weights = {3: 10000, 2: 500}
-    best_def = 2.0
-    # Khởi tạo logger huấn luyện
+    """Vòng lặp tiến hóa tham số Heuristic."""
+    # Khởi đầu với bộ thông số "Vàng" từ thế hệ 564 của lần chạy trước
+    best_weights = {3: 9256, 2: 585, 1: 55}
+    best_def = 1.45
+
     train_logger = TrainingLogger()
     
     print(f"Bắt đầu huấn luyện... Gốc: {best_weights}, Def: {best_def}")
 
-    for generation in range(1, 51): # Tăng số thế hệ lên để AI có thời gian tiến hóa
-        # Tạo biến dị (Mutation)
-        challenger_weights = {
-            3: max(5000, best_weights[3] + random.randint(-800, 800)), # Biến dị nhỏ hơn để tinh chỉnh
-            2: max(200, best_weights[2] + random.randint(-100, 100))
-        }
-        challenger_def = round(max(1.2, best_def + random.uniform(-0.2, 0.2)), 2)
+    # Chạy thêm 200 thế hệ để tinh chỉnh sâu (Fine-tuning)
+    for generation in range(1, 201):
+        challenger_weights, challenger_def = mutate_params(best_weights, best_def)
         
         print(f"\nThế hệ {generation}: Challenger thử nghiệm {challenger_weights}, Def: {challenger_def}")
         
-        # Chơi 3 vòng (6 ván đấu) để đánh giá
         is_better = play_match(challenger_weights, challenger_def, best_weights, best_def, rounds=3)
         
-        # Ghi log kết quả thế hệ này vào file CSV
         train_logger.log_generation(generation, challenger_weights, challenger_def, is_better, best_weights, best_def)
 
         if is_better:

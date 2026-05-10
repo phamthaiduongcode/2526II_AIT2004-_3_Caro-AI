@@ -20,8 +20,8 @@ cd 2526II_AIT2004-_3_Caro-AI
 
 ## 🚀 Hướng dẫn sử dụng
 
-### 1. Chạy trò chơi chính
-Để chơi trực tiếp với AI trên giao diện Console:
+### 1. Chạy trò chơi (Chế độ Console & GUI)
+Đây là file khởi đầu chính của dự án:
 ```bash
 python play.py
 ```
