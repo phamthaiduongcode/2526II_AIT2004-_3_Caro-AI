@@ -66,14 +66,14 @@ def run_benchmark():
         # Chạy Minimax
         ai_minimax = CaroAI(player_id=2, depth=ai_depth)
         board_m = copy.deepcopy(board_state) # Copy để không làm hỏng state gốc
-        move_m, score_m, nodes_m, time_m = ai_minimax.get_move(board_m, mode="minimax")
+        move_m, score_m, nodes_m, time_m = ai_minimax.get_move(board_m, mode="minimax", time_limit=None)
         logger.log_result(f"Minimax_{name}", ai_depth, nodes_m, time_m, score_m, move_m)
         print(f"{'Minimax':<15} | {name[:15]:<15} | {nodes_m:<10} | {time_m:.4f} | {move_m}")
 
         # Chạy Alpha-Beta
         ai_ab = CaroAI(player_id=2, depth=ai_depth)
         board_ab = copy.deepcopy(board_state)
-        move_ab, score_ab, nodes_ab, time_ab = ai_ab.get_move(board_ab, mode="alpha_beta")
+        move_ab, score_ab, nodes_ab, time_ab = ai_ab.get_move(board_ab, mode="alpha_beta", time_limit=None)
         logger.log_result(f"AlphaBeta_{name}", ai_depth, nodes_ab, time_ab, score_ab, move_ab)
         print(f"{'Alpha-Beta':<15} | {name[:15]:<15} | {nodes_ab:<10} | {time_ab:.4f} | {move_ab}")
         

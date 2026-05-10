@@ -1,13 +1,13 @@
 import time
 
 class CaroAI:
-    def __init__(self, player_id, depth=3, weights=None, defense_multiplier=2.0):
+    def __init__(self, player_id, depth=3, weights=None, defense_multiplier=1.45):
         self.player_id = player_id
         self.opponent_id = 3 - player_id
         self.depth = depth
         self.nodes_visited = 0
-        # Nếu không truyền weights, sử dụng bộ trọng số mặc định
-        self.weights = weights if weights else {3: 10000, 2: 500, 1: 50}
+        # Sử dụng bộ trọng số tối ưu từ kết quả huấn luyện thực tế
+        self.weights = weights if weights else {3: 9256, 2: 585, 1: 55}
         self.defense_multiplier = defense_multiplier
         self.transposition_table = {}  # {hash: (depth, flag, value, best_move)}
         self.killer_moves = [[None] * 2 for _ in range(20)]  # Lưu 2 nước killer mỗi độ sâu
@@ -36,25 +36,73 @@ class CaroAI:
         for r in range(board.size):
             for c in range(board.size):
                 for dr, dc in directions:
-                    p_count, e_count, opp_count = 0, 0, 0
+                    p_count, opp_block = 0, 0
+                    open_ends = 0
+
+                    # 1. Kiểm tra đầu trước cửa sổ
+                    prev_r, prev_c = r - dr, c - dc
+                    if 0 <= prev_r < board.size and 0 <= prev_c < board.size:
+                        if board.grid[prev_r][prev_c] == 0:
+                            open_ends += 1
+                    
+                    # 2. Duyệt cửa sổ 4 ô
                     for i in range(4):
                         nr, nc = r + dr * i, c + dc * i
                         if 0 <= nr < board.size and 0 <= nc < board.size:
                             v = board.grid[nr][nc]
-                            if v == player: p_count += 1
-                            elif v == 0: e_count += 1
-                            else: 
-                                opp_count = 1
-                                break
+                            if v == player:      p_count += 1
+                            elif v == 0:         pass
+                            else:                opp_block = 1; break
                         else:
-                            opp_count = 1
-                            break
+                            opp_block = 1; break
 
-                    # Nếu cửa sổ không bị đối thủ chặn và có quân của mình
-                    if opp_count == 0 and p_count > 0:
-                        # Ưu tiên lấy điểm từ bộ trọng số truyền vào
-                        total_score += weights.get(p_count, p_count * 10)
+                    if opp_block or p_count == 0:
+                        continue
+
+                    # 3. Kiểm tra đầu sau cửa sổ
+                    after_r, after_c = r + dr * 4, c + dc * 4
+                    if 0 <= after_r < board.size and 0 <= after_c < board.size:
+                        if board.grid[after_r][after_c] == 0:
+                            open_ends += 1
+
+                    base = weights.get(p_count, p_count * 10)
+                    # Phân cấp mức độ nguy hiểm:
+                    if open_ends == 2 and p_count >= 2:
+                        multiplier = 2.5 # Cực kỳ nguy hiểm (nước đôi)
+                    elif open_ends == 1 and p_count >= 2:
+                        multiplier = 1.5 # Nguy hiểm vừa phải (cần để mắt)
+                    else:
+                        multiplier = 1.0
+                        
+                    total_score += int(base * multiplier)
         return total_score
+
+    def _get_move_sort_key(self, board, m, tt_move=None, killers=None):
+        """
+        Hàm trợ giúp để tạo key sắp xếp nước đi, gộp tất cả các tiêu chí ưu tiên.
+        Thứ tự ưu tiên: Win > Block > TT_Move > Killer > Quick_Score > Center
+        """
+        r, c = m
+        
+        # 1. Kiểm tra nước thắng ngay lập tức (ưu tiên cao nhất)
+        board.grid[r][c] = self.player_id
+        if board._check_at(r, c) == self.player_id:
+            board.grid[r][c] = 0
+            return (4, 0, 0, 0, 0) # Giá trị cao nhất để đảm bảo ưu tiên
+        
+        # 2. Kiểm tra nước chặn đối thủ thắng (ưu tiên thứ hai)
+        board.grid[r][c] = self.opponent_id
+        if board._check_at(r, c) == self.opponent_id:
+            board.grid[r][c] = 0
+            return (3, 0, 0, 0, 0) # Giá trị cao nhì
+        board.grid[r][c] = 0
+
+        # 3. Các tiêu chí khác (TT_Move, Killer, Quick_Score, Center)
+        tt_priority = int(m == tt_move) if tt_move else 0
+        killer_priority = int(m in killers) if killers and any(killers) else 0
+
+        return (tt_priority, killer_priority, self.score_move_quick(board, r, c),
+                -(abs(r - board.size // 2) + abs(c - board.size // 2)))
 
     def score_move_quick(self, board, r, c):
         """Đánh giá nhanh độ 'hot' của một ô để sắp xếp nước đi."""
@@ -76,11 +124,10 @@ class CaroAI:
         if depth == 0: return self.evaluate_board(board), None
 
         moves = board.get_legal_moves()
-        # Sắp xếp nước đi: Ưu tiên ô có nhiều quân xung quanh + gần trung tâm
-        moves.sort(key=lambda m: (
-            self.score_move_quick(board, m[0], m[1]), 
-            -abs(m[0] - board.size // 2) - abs(m[1] - board.size // 2)
-        ), reverse=True)
+
+        # Minimax sử dụng Move Ordering cơ bản (Win > Block > Quick Score > Center)
+        # Chúng ta truyền None cho tt_move và killers để tránh NameError và giữ tính công bằng
+        moves.sort(key=lambda m: self._get_move_sort_key(board, m, tt_move=None, killers=None), reverse=True)
         
         best_move = moves[0] if moves else None
 
@@ -109,7 +156,7 @@ class CaroAI:
         self.nodes_visited += 1
 
         # Kiểm tra thời gian định kỳ để dừng tìm kiếm
-        if self.nodes_visited % 1000 == 0:
+        if self.time_limit is not None and self.nodes_visited % 1000 == 0:
             if time.time() - self.start_time > self.time_limit:
                 return None, None
 
@@ -137,12 +184,8 @@ class CaroAI:
         moves = board.get_legal_moves()
         # 2. Cải tiến Move Ordering với Killer Heuristic
         killers = self.killer_moves[depth]
-        moves.sort(key=lambda m: (
-            m == tt_move, # Ưu tiên nước đi tốt nhất từ bảng băm (ngay cả khi depth thấp)
-            m in killers, # Ưu tiên các nước đi "sát thủ" đã tìm thấy trước đó
-            self.score_move_quick(board, m[0], m[1]), 
-            -abs(m[0] - board.size // 2) - abs(m[1] - board.size // 2)
-        ), reverse=True)
+        # Gộp tất cả các tiêu chí sắp xếp: Win > Block > TT_Move > Killer > Quick_Score > Center
+        moves.sort(key=lambda m: self._get_move_sort_key(board, m, tt_move, killers), reverse=True)
         
         best_move = moves[0] if moves else None
 
@@ -207,6 +250,11 @@ class CaroAI:
             score, move = self.minimax(board, self.depth, True)
             return move, score, self.nodes_visited, time.time() - self.start_time
 
+        # Chế độ so sánh công bằng (Benchmark/Training): Không dùng Iterative Deepening
+        if self.time_limit is None:
+            score, move = self.alpha_beta(board, self.depth, -float('inf'), float('inf'), True)
+            return move, score, self.nodes_visited, time.time() - self.start_time
+
         final_best_move = None
         final_best_score = 0
 
@@ -223,5 +271,10 @@ class CaroAI:
             # Nếu đã tìm thấy nước thắng tuyệt đối, dừng ngay
             if abs(final_best_score) >= 900000:
                 break
+
+        # Fallback: Nếu timeout ngay từ depth 1, chọn nước đi đầu tiên khả thi
+        if final_best_move is None:
+            moves = board.get_legal_moves()
+            if moves: final_best_move = moves[0]
 
         return final_best_move, final_best_score, self.nodes_visited, time.time() - self.start_time

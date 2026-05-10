@@ -77,7 +77,12 @@ class CaroGUI:
                     c = (x - MARGIN) // CELL_SIZE
                     r = (y - MARGIN) // CELL_SIZE
                     if self.board.make_move(r, c):
+                        print(f"\n[Move] Người chơi 1 (X) đánh vào: ({r}, {c})")
+                        self.board.display()
+                        if self.logger:
+                            self.logger.log_human_move((r, c))
                         winner = self.board.check_win()
+                        if winner != 0: self.handle_end_game(winner)
                         if winner != 0: self.game_over = True
 
                 if event.type == pygame.USEREVENT:
@@ -105,6 +110,18 @@ class CaroGUI:
                 self.screen.blit(text, (WINDOW_SIZE // 2 - 50, WINDOW_SIZE + 10))
 
             pygame.display.flip()
+
+    def handle_end_game(self, winner):
+        """Xử lý kết thúc ván — in log ra terminal và ghi file."""
+        self.game_over = True
+        if winner == 1:
+            print("\n[KẾT THÚC] Người chơi (X) thắng!")
+        elif winner == 2:
+            print("\n[KẾT THÚC] AI (O) thắng!")
+        elif winner == -1:
+            print("\n[KẾT THÚC] Hòa!")
+        if self.logger:
+            self.logger.log_game_end(winner)
 
 if __name__ == "__main__":
     # Test nhanh UI

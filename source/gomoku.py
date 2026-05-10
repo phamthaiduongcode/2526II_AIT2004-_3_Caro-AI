@@ -12,7 +12,7 @@ class Board:
         # Mỗi ô có 3 trạng thái: trống (0), X (1), O (2)
         self.zobrist_table = [[[random.getrandbits(64) for _ in range(3)] 
                                for _ in range(size)] for _ in range(size)]
-        self.current_hash = random.getrandbits(64)
+        self.current_hash = 0 # Sử dụng base 0 để đảm bảo tính nhất quán khi recalculate
         # Giá trị XOR để phân biệt lượt đi (Side to move)
         self.zobrist_side = random.getrandbits(64)
         # Cờ đánh dấu AI đang tính toán, tránh log tràn lan terminal
@@ -23,7 +23,7 @@ class Board:
 
     def recalculate_hash(self):
         """Tính toán lại mã Hash từ đầu (Dùng sau khi can thiệp grid thủ công)."""
-        self.current_hash = random.getrandbits(64)
+        self.current_hash = 0
         for r in range(self.size):
             for c in range(self.size):
                 if self.grid[r][c] != 0:
@@ -117,13 +117,12 @@ class Board:
             print(row_str)
 
     def get_legal_moves(self):
-        """Lấy danh sách các nước đi khả thi. 
-        Tối ưu: Chỉ xét các ô trống trong bán kính 2 ô quanh các quân đã đánh.
-        Tuy nhiên, luôn ưu tiên các nước đi thắng ngay lập tức hoặc chặn đối thủ thắng."""
         if not self.history:
             return [(self.size // 2, self.size // 2)]
             
+        # Giữ look_range = 2 để tránh bỏ sót các nước đi quan trọng (như chặn fork từ xa)
         look_range = 2
+
         occupied = set((r, c) for r, c, p in self.history)
         candidates = set()
         
@@ -134,46 +133,35 @@ class Board:
                     if 0 <= nr < self.size and 0 <= nc < self.size and self.grid[nr][nc] == 0:
                         candidates.add((nr, nc))
 
-        # Kiểm tra nước đi thắng/chặn ngay trong danh sách candidates để tăng tốc
-        win_moves = []
-        block_moves = []
+        if not candidates:
+            return []
+
         opponent = 3 - self.current_player
-        for r, c in candidates:
-            # Thử thắng
+
+        def move_priority(pos):
+            r, c = pos
             self.grid[r][c] = self.current_player
             if self._check_at(r, c) == self.current_player:
-                win_moves.append((r, c))
-            self.grid[r][c] = 0
+                self.grid[r][c] = 0
+                return 3  # Ưu tiên cao nhất
             
-            # Thử chặn
+            # Thử chặn đối thủ thắng
             self.grid[r][c] = opponent
             if self._check_at(r, c) == opponent:
-                block_moves.append((r, c))
+                self.grid[r][c] = 0
+                return 2  # Ưu tiên nhì
+            
             self.grid[r][c] = 0
+            return 0
 
-        if win_moves:
-            return list(set(win_moves))
-        if block_moves:
-            return list(set(block_moves))
-        
-        # Fallback: nếu không có ứng viên nào trong bán kính nhưng bàn cờ còn trống nhiều,
-        # thì có thể cần mở rộng tìm kiếm bằng cách trả về tất cả các ô trống.
-        # Điều này tránh trường hợp AI bị "kẹt" khi không có quân nào gần đó.
-        if not candidates and len(occupied) < self.size * self.size / 2:
-            all_empty_moves = []
-            for r in range(self.size):
-                for c in range(self.size):
-                    if self.grid[r][c] == 0:
-                        all_empty_moves.append((r,c))
-            return all_empty_moves
-
-        return list(candidates)
+        # KHÔNG lọc cứng: Trả về TẤT CẢ các ô ứng viên, sắp xếp theo độ ưu tiên
+        return sorted(list(candidates), key=move_priority, reverse=True)
 
 # Ví dụ sử dụng:
 if __name__ == "__main__":
-    board = Board(15)
-    board.make_move(7, 7) # Đánh vào giữa
-    board.make_move(8, 8) # Đánh vào ô kế tiếp
+    board = Board(9)
+    board.make_move(4, 4) # Đánh vào giữa
+    board.make_move(5, 5) # Đánh vào ô kế tiếp
     board.display()
     board.undo_move()
     board.display()
